@@ -19,6 +19,7 @@ package com.dataartisans.flinktraining.examples.datastream_java.basics;
 import com.dataartisans.flinktraining.exercises.datastream_java.datatypes.TaxiRide;
 import com.dataartisans.flinktraining.exercises.datastream_java.sources.TaxiRideSource;
 import com.dataartisans.flinktraining.exercises.datastream_java.utils.ExerciseBase;
+import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.java.tuple.Tuple;
 import org.apache.flink.api.java.tuple.Tuple2;
@@ -45,34 +46,36 @@ public class RideCount {
 		ParameterTool params = ParameterTool.fromArgs(args);
 		final String input = params.get("input", ExerciseBase.pathToRideData);
 
-		final int maxEventDelay = 60;       // events are out of order by max 60 seconds
+		final int maxEventDelay = 60; //events are out of order by max 60 seconds
 		final int servingSpeedFactor = 600; // events of 10 minutes are served every second
 
-		// set up streaming execution environment
 		StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 		env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 
-		// start the data generator
+		// start data generator
 		DataStream<TaxiRide> rides = env.addSource(new TaxiRideSource(input, maxEventDelay, servingSpeedFactor));
 
 		// map each ride to a tuple of (driverId, 1)
 		DataStream<Tuple2<Long, Long>> tuples = rides.map(new MapFunction<TaxiRide, Tuple2<Long, Long>>() {
-					@Override
-					public Tuple2<Long, Long> map(TaxiRide ride) throws Exception {
-						return new Tuple2<Long, Long>(ride.driverId, 1L) ;
-					}
+			@Override
+			public Tuple2<Long, Long> map(TaxiRide taxiRide) throws Exception {
+				return new Tuple2<Long, Long>(taxiRide.driverId, 1L);
+			}
 		});
 
-		// partition the stream by the driverId
-		KeyedStream<Tuple2<Long, Long>, Tuple> keyedByDriverId = tuples.keyBy(0);
+		DataStream filteredTuples = tuples.filter(new FilterFunction<Tuple2<Long, Long>>() {
+			@Override
+			public boolean filter(Tuple2<Long, Long> longLongTuple2) throws Exception {
+				return longLongTuple2.f0 == 2013003756L;
+			}
+		});
 
-		// count the rides for each driver
+		// Partition the data by driverId
+		KeyedStream<Tuple2<Long, Long>, Tuple> keyedByDriverId = filteredTuples.keyBy(0);
 		DataStream<Tuple2<Long, Long>> rideCounts = keyedByDriverId.sum(1);
 
-		// we could, in fact, print out any or all of these streams
 		rideCounts.print();
 
-		// run the cleansing pipeline
-		env.execute("Ride Count");
+		env.execute();
 	}
 }
